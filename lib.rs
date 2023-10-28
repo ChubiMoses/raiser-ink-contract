@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 
-/// The `Raiser` contract is a blockchain-based funding system implemented in Rust.
+/// The `Raiser` contract is a blockchain-based funding system implemented in ink!.
 /// It allows users (contributors) to contribute funds to a pool and request payouts.
 ///
 /// The contract maintains a record of the total supply of funds, the amount funded by each address,

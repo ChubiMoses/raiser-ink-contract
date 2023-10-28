@@ -1,6 +1,6 @@
-# Blockchain Contract for Hackathon
+# Raiser Ink! Contract 
 
-This repository contains a blockchain contract developed for a hackathon. The contract, written in Rust, is designed to manage transactions and contributions in a blockchain network.
+This repository contains a blockchain contract developed for a hackathon. The contract, written in ink!, is designed to manage transactions and contributions in a blockchain network.
 
 ## Overview
 
@@ -37,9 +37,9 @@ The contract is structured as follows:
 
 To deploy the contract, follow these steps:
 
-1. Clone the repository: `git clone https://github.com/yourusername/yourrepository.git`
-2. Navigate to the repository: `cd yourrepository`
-3. Compile the contract: `cargo build --release`
+1. Clone the repository: `git clone https://github.com/ChubiMoses/raiser-ink-contract.git`
+2. Navigate to the repository: `cd your repository`
+3. Compile the contract: `cargo contract build --release`
 4. Deploy the contract: `cargo run --release`
 
 ## Testing
@@ -48,12 +48,9 @@ To run the tests, use the following command: `cargo test`
 
 ## Contributing
 
-Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTING.md) first.
+Contributions are welcome!
 
-## License
-
-This project is licensed under the [MIT License](LICENSE.md).
 
 ## Contact
 
-If you have any questions, feel free to reach out to us at [your contact information].
+If you have any questions, feel free to reach out to me at chubiguit@gmail.com.
