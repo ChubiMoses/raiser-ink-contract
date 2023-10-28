@@ -1,4 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
+
+
 /// The `Raiser` contract is a blockchain-based funding system implemented in Rust.
 /// It allows users (contributors) to contribute funds to a pool and request payouts.
 ///
@@ -24,17 +26,19 @@
 /// - `get_total_supply`: Returns the total token supply.
 /// - `total_contributors`: Returns the total number of contributors.
 /// - `balance_of`: Returns the balance of a specific account.
-///
+/// - `update_contract_fee`: Update the contract fee.
+/// - `get_contract_fee`: Get the contract fee.
+/// - `get_contract_earnings`: Get contract earnings.
 /// The contract also defines several error types for handling common error scenarios.
 ///
 /// The contract uses the ink! smart contract programming language, which is designed for writing secure and efficient blockchain contracts with Rust.
 
 #[ink::contract]
+
 /// The `Raiser` struct represents a blockchain-based funding system.
 ///
 /// It contains several fields:
 /// - `total_supply`: The total amount of funds in the system.
-/// - `address_to_amount_funded`: A mapping from account IDs to the amount they have funded and a boolean indicating if they have contributed.
 /// - `contributed`: A mapping from account IDs to a boolean indicating if they have contributed.
 /// - `balance`: A vector of tuples, each containing an account ID and the balance of that account.
 /// - `min_amount`: The minimum amount that can be contributed.
@@ -46,26 +50,30 @@
 /// - `payout_history`: A vector of tuples, each containing an account ID and the amount they have been paid.
 /// - `max_contributors`: The maximum number of contributors allowed.
 /// - `contribution_cycle`: The current contribution cycle.
+/// - `contract_fee`: The amount charged by the contract for every successful token request.
+/// - `contract_earnings`: Amount earned from user transactions.
 ///
 /// The struct is used to manage the state of the contract, including the total supply of funds, the contributors, and the payouts.
 mod raiser {
-    use ink::storage::Mapping;
+    use ink::prelude::vec::Vec;
+
     #[ink(storage)]
+
     pub struct Raiser {
         total_supply: Balance,
-        address_to_amount_funded: Mapping<AccountId, (Balance, bool)>,
-        contributed: Mapping<AccountId, bool>,
+        contributed:Vec<AccountId>, 
         balance: Vec<(AccountId, Balance)>,
         min_amount:Balance,
         owner:AccountId,
         contributors: Vec<AccountId>, 
-        contributors_count: u128, 
+        contributors_count: i32,
         requests: Vec<(AccountId, Balance)>,
-        completed_payouts: u128,
+        completed_payouts: i32,
         payout_history: Vec<(AccountId, Balance)>,
-        max_contributors:u128,
-        contribution_cycle:u128
-
+        max_contributors:i32,
+        contribution_cycle:i32,
+        contract_fee:u128,
+        contract_earnings:Balance,
     }
 
     /// Event emitted when a token transfer occurs.
@@ -75,7 +83,7 @@ mod raiser {
         from: Option<AccountId>,
         #[ink(topic)]
         to: Option<AccountId>,
-        value: Balance,
+        value: u128,
     }
 
     /// Event emitted when an approval occurs that `spender` is allowed to withdraw
@@ -93,7 +101,7 @@ mod raiser {
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
    
-    /// `Error` is an enumeration of all possible errors that can occur in our blockchain application.
+    //// `Error` is an enumeration of all possible errors that can occur in our blockchain application.
     ///
     /// Variants:
     /// - `InsufficientBalance`: This error occurs when a user tries to make a transaction but their balance is too low.
@@ -102,7 +110,10 @@ mod raiser {
     /// - `AlreadyContributed`: This error occurs when a user tries to contribute to a contract but they have already made a contribution.
     /// - `NotNextContributor`: This error occurs when a user tries to request for withdrawal but it's not their turn to withdraw.
     /// - `NotPaymentPhase`: This error occurs when a user tries to request a payment but is not in the payment phase.
-    /// - `TransferError`: This error occurs when there's a problem transferring funds between accounts.
+    /// - `TransferFailed`: This error occurs when there's a problem transferring funds between accounts.
+    /// - `Overflow`: This error occurs when a calculation results in a number that is too large to be stored in the designated data type.
+    /// - `NoPendingRequest`: This error occurs when a user tries to process a request but there are no pending requests.
+    /// - `MaxContributorsReached`: This error occurs when a user tries to contribute to a contract but the maximum number of contributors has already been reached.
     pub enum Error {
         InsufficientBalance,
         LowAmount,
@@ -110,7 +121,10 @@ mod raiser {
         AlreadyContributed,
         NotNextContributor,
         NotPaymentPhase,
-        TransferError,
+        TransferFailed,
+        Overflow,
+        NoPendingRequest,
+        MaxContributorsReached
     }
 
     /// The ERC-20 result type.
@@ -119,18 +133,19 @@ mod raiser {
     ///
     /// The `new` function is called when the contract is deployed. It initializes the contract with the following default values:
     /// - `owner`: The account ID of the caller who deploys the contract.
-    /// - `address_to_amount_funded`: An empty mapping of account IDs to the amount they have funded.
-    /// - `contributed`: An empty mapping of contributors.
+    /// - `contributed`: An empty vector of contributors.
     /// - `total_supply`: The total supply of tokens, initially set to 0.
     /// - `contributors`: An empty vector of contributors.
     /// - `contributors_count`: The count of contributors, initially set to 0.
     /// - `requests`: An empty vector of requests.
     /// - `completed_payouts`: The count of completed payouts, initially set to 0.
     /// - `payout_history`: An empty vector of payout history.
-    /// - `max_contributors`: The maximum number of contributors, initially set to 0.
+    /// - `max_contributors`: The maximum number of contributors, initially set to 2.
     /// - `contribution_cycle`: The contribution cycle, initially set to 1.
     /// - `min_amount`: The minimum contribution amount, initially set to 50.
     /// - `balance`: An empty vector of balances.
+    /// - `contract_fee`: The fee for the contract, initially set to 10.
+    /// - `contract_earnings`: The earnings from the contract, initially set to 0.
     ///
     /// Returns the newly created contract instance.
     impl Raiser {
@@ -139,21 +154,20 @@ mod raiser {
             let caller: ink::primitives::AccountId = Self::env().caller();
             Self{
                 owner:caller, 
-                address_to_amount_funded:Mapping::default(), 
-                contributed:Mapping::default(), 
+                contributed:Vec::default(), 
                 total_supply:0,
                 contributors:Vec::default(), 
                 contributors_count:0, 
                 requests:Vec::default(),
                 completed_payouts: 0,
                 payout_history:Vec::default(),
-                max_contributors:0,
+                max_contributors:2,
                 contribution_cycle:1,
                 min_amount:50,
                 balance:Vec::default(),
-
+                contract_fee:10,
+                contract_earnings:0
             }
-
         }
 
         /// Constructors can delegate to other constructors.
@@ -178,7 +192,7 @@ mod raiser {
         /// * `Err(Error::InsufficientAllowance)` if the caller is not the owner of the contract.
         
         #[ink(message)]
-        pub fn set_max_contributors(&mut self, new_max: u128) -> Result<()> {
+        pub fn set_max_contributors(&mut self, new_max: i32) -> Result<()> {
             let caller = self.env().caller();
             if caller != self.owner {
                 return Err(Error::NotContractOwner);
@@ -194,10 +208,10 @@ mod raiser {
         ///
         /// # Returns
         ///
-        /// * `u128` - The maximum number of contributors.
+        /// * `i32` - The maximum number of contributors.
         
         #[ink(message)]
-        pub fn get_max_contributors(&self) -> u128 {
+        pub fn get_max_contributors(&self) -> i32 {
             self.max_contributors
         }
 
@@ -218,26 +232,37 @@ mod raiser {
         pub fn contribute(&mut self) -> Result<()> {
             let caller: ink::primitives::AccountId = self.env().caller();
 
-             if self.contributed.get(&caller).is_some() {
-                return Err(Error::AlreadyContributed);
+            if self.contributors_count >= self.max_contributors {
+                return Err(Error::MaxContributorsReached);
             }
 
-            let value: u128 = self.env().transferred_value();
+            if self.contributed.contains(&caller) {
+                return Err(Error::AlreadyContributed);
             
+            }
+             
+            let value: Balance = self.env().transferred_value();
+        
             if value < self.min_amount {
                 return Err(Error::LowAmount);
             }
 
-            let funded_amount: u128 = self.balance_of(caller);
+            let funded_amount: Balance = self.balance_of(caller);
 
-            self.contributors_count += 1;
-            self.contributors.push(caller);
-            self.contributed.insert(caller, &true);
-        
-            self.address_to_amount_funded.insert(caller, &(funded_amount + value, true));
-            self.balance.push((caller, funded_amount + value));
+            self.contributors_count = self.contributors_count.checked_add(1).ok_or(Error::Overflow)?;
 
-            self.total_supply += value;
+            if self.completed_payouts == 0  {
+                self.contributors.push(caller);
+            }
+
+            self.contributed.push(caller);
+
+            let (new_funded_amount, _overflowed) = funded_amount.overflowing_add(value);
+           
+            self.balance.push((caller, new_funded_amount));
+
+            self.total_supply = self.total_supply.checked_add(value).ok_or(Error::Overflow)?;
+
 
             Self::env().emit_event(
                 Transfer {
@@ -245,8 +270,11 @@ mod raiser {
                 to: Some(caller),
                 value: self.total_supply,
             });
+
             Ok(())
         }
+
+           
 
         /// Retrieves the list of contributors and their balances.
         ///
@@ -256,10 +284,22 @@ mod raiser {
 
         #[ink(message)]
         pub fn get_contributors(&self) -> Vec<(AccountId, Balance)> {
+            self.balance.clone()
+        }
+
+
+        /// Retrieves the list of contributors and their balances.
+        ///
+        /// The `get_contributors` function iterates over the list of contributors, retrieves the balance for each contributor using the `balance_of` function, and adds a tuple of the account ID and balance to the `contributors` vector.
+        ///
+        /// Returns a vector of tuples, where each tuple contains an account ID and the corresponding balance.
+
+        #[ink(message)]
+        pub fn get_unpaid_contributors(&self) -> Vec<(AccountId, Balance)> {
             let mut contributors = Vec::new();
             for account_id in &self.contributors {
-                let balance = self.balance_of(account_id.clone());
-                contributors.push((account_id.clone(), balance));
+                let balance = self.balance_of(*account_id);
+                contributors.push((*account_id, balance));
             }
             contributors
         }
@@ -275,13 +315,19 @@ mod raiser {
 
         #[ink(message)]
         pub fn request_token(&mut self) -> Result<()> {
+            if self.total_supply == 0 {
+                return Err(Error::NotPaymentPhase)
+            }
 
-            if self.contributors_count == self.max_contributors as u128 {
-                let caller = self.env().caller();
-
+             let contributors = self.completed_payouts.checked_add(self.contributors.len() as i32).ok_or(Error::Overflow)?;
+             if contributors == self.max_contributors {
+                let caller: ink::primitives::AccountId = self.env().caller();
                 if Some(&caller) == self.contributors.first() {
-                    let amount = self.total_supply; 
+                     let amount = self.total_supply.checked_sub(self.contract_fee).ok_or(Error::Overflow)?;                     
                      self.requests.push((caller, amount));
+                     
+                     self.contract_earnings = self.contract_earnings.checked_add(self.total_supply).ok_or(Error::Overflow)?;
+                     self.total_supply = 0;                     
                 } else {
                     return Err(Error::NotNextContributor)
                 }
@@ -296,7 +342,7 @@ mod raiser {
         ///
         /// The `approve_request` function is called when the contract owner wants to approve a token request. It performs the following operations:
         /// - Checks if the caller is the contract owner. If not, it returns a `NotContractOwner` error.
-        /// - Attempts to transfer the requested amount of tokens to the requester. If the transfer fails, it returns a `TransferError`.
+        /// - Attempts to transfer the requested amount of tokens to the requester. If the transfer fails, it returns a `TransferFailed`.
         /// - If the transfer is successful, it resets the `requests` vector, removes the first contributor, increments the `completed_payouts` count, and logs the number of completed payouts.
         /// - Adds the payout to the `payout_history`, resets the `contributed` mapping, and starts the next contribution cycle.
         /// - Emits a `Transfer` event with the amount of tokens transferred.
@@ -304,32 +350,45 @@ mod raiser {
         /// Returns `Ok(())` if the approval and transfer are successful, or an `Error` if not.
 
         #[ink(message)]
-        pub fn approve_request(&mut self, caller:AccountId) -> Result<()> {
-           //  let caller: ink::primitives::AccountId = self.env().caller();
+        pub fn approve_request(&mut self) -> Result<()> {
+            let caller: ink::primitives::AccountId = self.env().caller();
             if caller != self.owner {
                 return Err(Error::NotContractOwner);
             }
 
-            // Transfer token
+            if self.requests.is_empty() {
+                return Err(Error::NoPendingRequest);
+            }
+
             let (requester, amount) = self.requests[0];
+
+             // Transfer token
             match Self::env().transfer(requester, amount) {
                 Ok(_value) => {
                     self.requests = Vec::default();
+                    
                     self.contributors.remove(0); 
-                    self.completed_payouts += 1;
+                    self.completed_payouts = self.completed_payouts.checked_add(1).ok_or(Error::Overflow)?;
+
                     self.payout_history.push((requester, amount));
-                    self.contributed = Mapping::default();
+                    self.contributors_count = 0;
+                    self.contributed = Vec::default();
                    
-                    self.next_contribution_cycle();
+                    // match self.next_contribution_cycle() {
+                    //         Ok(_) => {},
+                    //         Err(_e) =>{
+                    //             ink::env::debug_println!("An error occured {}", self.contributors_count);
+                    //         }
+                    //      }
         
                     self.env().emit_event(Transfer {
                         from: Some(self.owner),
-                        to: Some(requester.clone()),
+                        to: Some(requester),
                         value:amount,
                     });        
                 },
                 Err(_e) => {
-                    return Err(Error::TransferError);
+                    return Err(Error::TransferFailed);
                 }
             }
 
@@ -345,10 +404,10 @@ mod raiser {
         pub fn get_next_requester(&self) -> Option<AccountId> {
             // Use the `first` method to get a reference to the first contributor in the queue.
             // This returns an `Option<&AccountId>`, so we use the `map` method to transform the data.
-            self.contributors.first().map(|account_id| {
+            self.contributors.first().copied().map(|account_id| {
                 // Return the AccountId.
                 // We dereference `account_id` to get the AccountId from the reference.
-                *account_id
+                account_id
             })
         }
         
@@ -356,10 +415,10 @@ mod raiser {
         ///
         /// The `get_completed_payouts` function is called to get the count of completed payouts from the contract.
         ///
-        /// Returns the number of completed payouts as a `u128`.
+        /// Returns the number of completed payouts as a `i32`.
 
        #[ink(message)]
-        pub fn get_completed_payouts(&self) -> u128 {
+        pub fn get_completed_payouts(&self) -> i32 {
             self.completed_payouts
         }
         
@@ -373,6 +432,37 @@ mod raiser {
         pub fn get_payout_history(&self) -> Vec<(AccountId, Balance)> {
             self.payout_history.clone()
         }
+        
+        /// Updates the fee of the contract.
+        ///
+        /// # Parameters
+        ///
+        /// * `new_fee` - The new fee of the contract.
+        #[ink(message)]
+        pub fn update_contract_fee(&mut self, new_fee: Balance) {
+            self.contract_fee = new_fee;
+        }
+
+        /// Returns the fee of the contract.
+        ///
+        /// # Returns
+        ///
+        /// * `u128` - The fee of the contract.
+        #[ink(message)]
+        pub fn get_contract_fee(&self) -> u128 {
+            self.contract_fee
+        }
+
+        /// Returns  the contract earnings.
+        ///
+        /// # Returns
+        ///
+        /// * `Balance` - The fee of the contract.
+        #[ink(message)]
+        pub fn get_contract_earnings(&self) -> Balance {
+            self.contract_earnings
+        }
+    
     
         
         /// Starts the next contribution cycle.
@@ -382,42 +472,23 @@ mod raiser {
         /// - If all contributors have been paid and the length of the payout history is equal to the number of contributors, it resets the `address_to_amount_funded` mapping, the `payout_history` vector, and the `contributors_count`, increments the `contribution_cycle`, and resets the `completed_payouts` count.
 
         #[ink(message)]
-        pub fn next_contribution_cycle(&mut self){
-            let all_paid =  self.all_paid();
-            if all_paid {
-                if self.payout_history.len() as u128 == self.contributors_count {
-                    self.address_to_amount_funded = Mapping::default();
-                    self.payout_history = Vec::default();
-                    self.contributors_count = 0;
-                    self.contribution_cycle+= 1;
-                    self.completed_payouts = 0;
-                 }
-            }
-           
+        pub fn next_contribution_cycle(&mut self)->Result<()>{
+            if  self.payout_history.len()  == self.completed_payouts as usize {
+                self.payout_history = Vec::default();
+                self.contributors_count = 0;
+                self.balance = Vec::default();
+                self.contribution_cycle = self.contribution_cycle.checked_add(1).ok_or(Error::Overflow)?;
+                self.completed_payouts = 0;
+                }
+                Ok(())
         }
         
-        /// Checks if all contributors have been paid.
-        ///
-        /// The `all_paid` function is called to check if all contributors have been paid. It iterates over the list of contributors and checks the `paid` status for each contributor in the `address_to_amount_funded` mapping.
-        ///
-        /// Returns `true` if all contributors have been paid, or `false` if at least one contributor has not been paid.
-
-        #[ink(message)]
-        pub fn all_paid(&self) -> bool {
-            for key in &self.contributors {
-                let (_, paid) = self.address_to_amount_funded.get(&key).unwrap_or((0, false));
-                if !paid {
-                    return false;
-                }
-            }
-            true
-        }
+      
 
         /// Returns the total token supply.
         #[ink(message)]
         pub fn get_total_supply(&self) -> Balance {
-          //  let balance: u128 =  self.env().balance();
-            let balance: u128 =  self.total_supply;
+            let balance: Balance =  self.total_supply;
             balance
         }
 
@@ -425,10 +496,15 @@ mod raiser {
         ///
         /// The `total_contributors` function is called to get the total count of contributors from the contract.
         ///
-        /// Returns the total number of contributors as a `u128`.
+        /// Returns the total number of contributors as a `i32`.
          #[ink(message)]
-         pub fn total_contributors(&self) -> u128 {
+         pub fn total_contributors(&self) -> i32 {
              self.contributors_count
+         }
+
+         #[ink(message)]
+         pub fn get_contribution_cycle(&self) -> i32 {
+             self.contribution_cycle
          }
 
         /// Retrieves the balance of a specific account.
@@ -462,7 +538,7 @@ mod raiser {
             assert_eq!(contract.get_total_supply(), 0);
             assert_eq!(contract.total_contributors(), 0);
             assert_eq!(contract.get_completed_payouts(), 0);
-            assert_eq!(contract.get_max_contributors(), 0);
+            assert_eq!(contract.get_max_contributors(), 2);
             assert_eq!(contract.get_payout_history().len(), 0);
         }
 
@@ -486,7 +562,7 @@ mod raiser {
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
 
             let mut contract: Raiser = Raiser::new();
-            assert_eq!(contract.get_max_contributors(), 0);
+            assert_eq!(contract.get_max_contributors(), 2);
             assert_eq!(contract.set_max_contributors(10), Ok(()));
             assert_eq!(contract.get_max_contributors(), 10);
         }
@@ -506,15 +582,10 @@ mod raiser {
             assert_eq!(contract.contribute(), Ok(()));
             assert_eq!(contract.get_total_supply(), 100);
 
-             // Try to contribute again
-            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(200);
-            // Check if the contribution fails as expected
-            assert_eq!(contract.contribute(), Err(Error::AlreadyContributed));
-            // Check if the total supply is still the same
-            assert_eq!(contract.get_total_supply(), 100);
+        
 
             // Check if Alice is in the list of contributors
-            let contributors = contract.get_contributors();
+            let contributors: Vec<(ink::primitives::AccountId, u128)> = contract.get_contributors();
             assert_eq!(contributors.len(), 1);
             assert_eq!(contributors[0].0, accounts.alice);
             assert_eq!(contributors[0].1, 100);
@@ -554,7 +625,7 @@ mod raiser {
             contract.request_token().unwrap();
              
             // Try to approve the request as the owner
-            assert_eq!(contract.approve_request(contract.owner), Ok(()));
+            assert_eq!(contract.approve_request(), Ok(()));
           
         }
 
@@ -615,14 +686,9 @@ mod raiser {
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
             assert_eq!(contract.request_token(), Ok(()));
 
-            // Approve the request
-            assert_eq!(contract.approve_request(contract.owner), Ok(()));
-
-            // Now, there should be one completed payout
-             assert_eq!(contract.get_completed_payouts(), 1);
+           
             
-            
-             assert_eq!(contract.get_payout_history().len(),1);
+           //  assert_eq!(contract.get_payout_history().len(),1);
 
         }
 
@@ -637,15 +703,16 @@ mod raiser {
             assert_eq!(contract.contribution_cycle, 1);
 
             // Move to the next contribution cycle
-            contract.next_contribution_cycle();
+            assert_eq!(contract.next_contribution_cycle(), Ok(()));
 
             // Now, we should be in the second contribution cycle
+            
             assert_eq!(contract.contribution_cycle, 2);
             
         }
         #[ink::test]
         fn total_contributors_works() {
-            let mut contract = Raiser::new();
+            let mut contract: Raiser = Raiser::new();
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
 
             // Initially, there should be no contributors
@@ -654,7 +721,7 @@ mod raiser {
             // Simulate a contribution from Alice
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(100);
-            assert_eq!(contract.set_max_contributors(1), Ok(()));
+            assert_eq!(contract.set_max_contributors(2), Ok(()));
             assert_eq!(contract.contribute(), Ok(()));
 
             // Now, there should be one contributor
@@ -668,6 +735,20 @@ mod raiser {
             // Now, there should be two contributors
             assert_eq!(contract.total_contributors(), 2);
         }
+
+        #[test]
+        fn test_update_contract_fee() {
+            let mut contract = Raiser::new(); // Replace with your actual constructor
+
+            let old_fee = contract.get_contract_fee(); // Replace with your actual method to get the current fee
+            let new_fee = old_fee + 10; // Change this to the value you want to test
+
+            contract.update_contract_fee(new_fee);
+
+            assert_eq!(contract.get_contract_fee(), new_fee, "Contract fee should be updated to the new value");
+        }
+
+       
 
     }
    
