@@ -4,7 +4,7 @@ This repository contains a blockchain contract developed for a hackathon. The co
 
 ## Overview
 
-The contract is designed to facilitate a decentralized system of transactions and contributions. It allows users to contribute to the contract, request transactions, and receive payouts. The contract also maintains a history of all payouts and manages the total supply of tokens. It draws inspiration from the African tradition of Esusu, where a group of people team up to contribute a fixed and equal sum of money at specific intervals – daily, weekly, fortnightly, monthly, or bi-monthly – enabling each member to collect the entire sum in rotation. When everyone in the group has benefited from the pool, a new rotation cycle is launched. 
+The contract is designed to facilitate a decentralized system of transactions and contributions. It allows users to contribute to the contract, request transactions, and receive payouts. The contract also maintains a history of all payouts and manages the total supply of tokens. It draws inspiration from the African tradition of Esusu(https://www.in-formality.com/wiki/index.php?title=Esusu_(Nigeria)), where a group of people team up to contribute a fixed and equal sum of money at specific intervals – daily, weekly, fortnightly, monthly, or bi-monthly – enabling each member to collect the entire sum in rotation. When everyone in the group has benefited from the pool, a new rotation cycle is launched. 
 Esusu is popular in Nigeria due to limited bank loan access, aiding asset acquisition, business startups, and trade expansion.
 
 
